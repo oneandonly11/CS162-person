@@ -50,7 +50,8 @@ typedef struct word_count WordCount;
 int init_words(WordCount **wclist);
 
 /* Length of a word count list */
-ssize_t len_words(WordCount *wchead);
+size_t len_words(WordCount *wchead);
+
 
 /* Find a word in a word_count list */
 WordCount *find_word(WordCount *wchead, char *word);

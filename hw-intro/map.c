@@ -17,7 +17,7 @@ int main(int argc, char *argv[]) {
     
     #include "printer.c"
 
-    /* Dynamically allocate some stuff */
+    /* Dynamically a llocate some stuff */
     volatile char *buf1 = malloc(100);
     /* ... and some more stuff */
     volatile char *buf2 = malloc(100);
