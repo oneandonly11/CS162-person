@@ -118,6 +118,7 @@ static void start_process(void* file_name_) {
     sema_up(&temporary);
     thread_exit();
   }
+  if_.esp -= 0x14;
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -125,6 +126,7 @@ static void start_process(void* file_name_) {
      arguments on the stack in the form of a `struct intr_frame',
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
+  asm volatile("movl $1,0x4(%0)" : : "g"(if_.esp) : "memory");
   asm volatile("movl %0, %%esp; jmp intr_exit" : : "g"(&if_) : "memory");
   NOT_REACHED();
 }
