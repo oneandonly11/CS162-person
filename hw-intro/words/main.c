@@ -46,6 +46,37 @@ WordCount *word_counts = NULL;
  */
 int num_words(FILE* infile) {
   int num_words = 0;
+  int c;
+  int word_len = 0;
+  char* word = (char*)malloc(MAX_WORD_LEN * sizeof(char));
+  while (true) {
+    c = fgetc(infile);
+    if (c == EOF) {
+      break;
+    }
+    if (isalpha(c)) {
+      if (word_len < MAX_WORD_LEN) {
+        word[word_len++] = c;
+      }
+      else{
+        printf("Word is too long\n");
+      }
+    }
+    else {
+      if (word_len > 1) {
+        num_words++;
+        word_len = 0;
+      }
+      else{
+        continue;
+      }
+    }
+  }
+
+  if (word_len > 1) {
+    num_words++;
+  }
+
 
   return num_words;
 }
@@ -62,6 +93,48 @@ int num_words(FILE* infile) {
  * and 0 otherwise.
  */
 int count_words(WordCount **wclist, FILE *infile) {
+  if(wclist == NULL || infile == NULL){
+    return 1;
+  }
+  int c;
+  int word_len = 0;
+  char* word = (char*)malloc(MAX_WORD_LEN * sizeof(char));
+  while (true) {
+    c = fgetc(infile);
+    if (c == EOF) {
+      break;
+    }
+    if (isalpha(c)) {
+      if (word_len < MAX_WORD_LEN) {
+        word[word_len++] = tolower(c);
+      }
+      else{
+        printf("Word is too long\n");
+      }
+    }
+    else {
+      if (word_len > 1) {
+        word[word_len] = '\0';
+        if(add_word(wclist, word)){
+          return 1;
+        }
+        word_len = 0;
+      }
+      else{
+        continue;
+      }
+    }
+  }
+  if (word_len > 1) {
+        word[word_len] = '\0';
+        if(add_word(wclist, word)){
+          return 1;
+        }
+        word_len = 0;
+      }
+
+
+  
   return 0;
 }
 
@@ -70,7 +143,15 @@ int count_words(WordCount **wclist, FILE *infile) {
  * Useful function: strcmp().
  */
 static bool wordcount_less(const WordCount *wc1, const WordCount *wc2) {
-  return 0;
+  if(wc1->count > wc2->count){
+    return 0;
+  }
+  else if(wc1->count < wc2->count){
+    return 1;
+  }
+  else{
+    return strcmp(wc1->word, wc2->word) < 0;
+  }
 }
 
 // In trying times, displays a helpful message.
@@ -126,17 +207,50 @@ int main (int argc, char *argv[]) {
     printf("Please specify a mode.\n");
     return display_help();
   }
+  
 
   /* Create the empty data structure */
-  init_words(&word_counts);
-
+  if(init_words(&word_counts)){
+    printf("Error: Could not initialize word count list\n");
+    return 1;
+  }
+  
   if ((argc - optind) < 1) {
     // No input file specified, instead, read from STDIN instead.
     infile = stdin;
+    if (infile == NULL) {
+        fprintf(stderr, "Error: Could not open file %s\n", argv[i]);
+        return 1;
+      }
+      if (count_mode) {
+        total_words += num_words(infile);
+      } else {
+        if(count_words(&word_counts, infile)){
+          printf("Error: Could not count words\n");
+          return 1;
+        }
+      }
   } else {
     // At least one file specified. Useful functions: fopen(), fclose().
     // The first file can be found at argv[optind]. The last file can be
     // found at argv[argc-1].
+    for(int i =optind; i <= argc-1; i++){
+      infile = fopen(argv[i], "r");
+      if (infile == NULL) {
+        fprintf(stderr, "Error: Could not open file %s\n", argv[i]);
+        return 1;
+      }
+      if (count_mode) {
+        total_words += num_words(infile);
+      } else {
+        if(count_words(&word_counts, infile)){
+          printf("Error: Could not count words\n");
+          return 1;
+        }
+      }
+      fclose(infile);
+    }
+
   }
 
   if (count_mode) {
