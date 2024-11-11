@@ -7,6 +7,8 @@
 #include "threads/vaddr.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "threads/palloc.h"
+#include "userprog/pagedir.h"
 
 static void syscall_handler(struct intr_frame*);
 
@@ -76,6 +78,66 @@ static void syscall_close(int fd) {
   }
 }
 
+static bool alloc_page_in_user(void* upage, bool writable) {
+  struct thread* t = thread_current();
+  void* kpage = palloc_get_page(PAL_USER | PAL_ZERO);
+  if (kpage == NULL)
+    return false;
+
+  if (!pagedir_set_page(t->pagedir, upage, kpage, writable)) {
+    palloc_free_page(kpage);
+    return false;
+  }
+
+  return true;
+}
+
+static void free_page_in_user(void* upage) {
+  struct thread* t = thread_current();
+  palloc_free_page(pagedir_get_page(t->pagedir, upage));
+  pagedir_clear_page(t->pagedir, upage);
+}
+
+static bool alloc_page_in_heap(intptr_t increment){
+  struct thread* t = thread_current();
+  uint8_t* new_heap_end = t->heap_end + increment;
+  size_t num_pages = (pg_round_up(new_heap_end) - pg_round_up(t->heap_end)) / PGSIZE;
+  for (int i = 0; i < num_pages; i++) {
+    if (!alloc_page_in_user((uint8_t*)pg_round_up(t->heap_end) + i * PGSIZE, true)) {
+      for (int j = 0; j < i; j++)
+        free_page_in_user((uint8_t*)pg_round_up(t->heap_end) + j * PGSIZE);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+static void free_page_in_heap(intptr_t increment) {
+  struct thread* t = thread_current();
+  uint8_t* new_heap_end = t->heap_end + increment;
+  size_t num_pages = (pg_round_up(t->heap_end) - pg_round_up(new_heap_end)) / PGSIZE;
+  for (int i = 0; i < num_pages; i++)
+    free_page_in_user((uint8_t*)pg_round_up(new_heap_end) + i * PGSIZE);
+
+}
+
+static void* syscall_sbrk(intptr_t increment) {
+  struct thread* t = thread_current();
+  uint8_t* old_heap_end = t->heap_end;
+  
+  if (increment > 0) {
+    if (!alloc_page_in_heap(increment))
+      return (void*)-1;
+  } else if (increment < 0) {
+    free_page_in_heap(increment);
+  }
+
+  t->heap_end += increment;
+
+  return old_heap_end;
+}
+
 static void syscall_handler(struct intr_frame* f) {
   uint32_t* args = (uint32_t*)f->esp;
   struct thread* t = thread_current();
@@ -109,6 +171,11 @@ static void syscall_handler(struct intr_frame* f) {
     case SYS_CLOSE:
       validate_buffer_in_user_region(&args[1], sizeof(uint32_t));
       syscall_close((int)args[1]);
+      break;
+    
+    case SYS_SBRK:
+      validate_buffer_in_user_region(&args[1], sizeof(uint32_t));
+      f->eax = (uint32_t)syscall_sbrk((intptr_t)args[1]);
       break;
 
     default:

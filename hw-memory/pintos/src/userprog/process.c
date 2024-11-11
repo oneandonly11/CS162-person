@@ -256,6 +256,7 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
           uint32_t mem_page = phdr.p_vaddr & ~PGMASK;
           uint32_t page_offset = phdr.p_vaddr & PGMASK;
           uint32_t read_bytes, zero_bytes;
+          
           if (phdr.p_filesz > 0) {
             /* Normal segment.
                      Read initial part from disk and zero the rest. */
@@ -267,6 +268,9 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
             read_bytes = 0;
             zero_bytes = ROUND_UP(page_offset + phdr.p_memsz, PGSIZE);
           }
+          thread_current()->heap_start = (uint8_t*) (mem_page + read_bytes + zero_bytes);
+          thread_current()->heap_end = (uint8_t*) (mem_page + read_bytes + zero_bytes);
+          
           if (!load_segment(file, file_page, (void*)mem_page, read_bytes, zero_bytes, writable))
             goto done;
         } else
