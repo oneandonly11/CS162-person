@@ -6,6 +6,11 @@ service KvStore {
   rpc Example (ExampleRequest) returns (ExampleReply) {}
 
   // TODO: Protocol buffers
+  rpc Echo (EchoRequest) returns (EchoReply) {}
+
+  rpc Put (PutRequest) returns (PutReply) {}
+
+  rpc Get (GetRequest) returns (GetReply) {}
 }
 
 message ExampleRequest {
@@ -17,3 +22,27 @@ message ExampleReply {
 }
 
 // TODO: Protocol buffers
+message EchoRequest {
+  string msg = 2;
+}
+
+message EchoReply {
+  string msg = 2;
+}
+
+message PutRequest {
+  bytes key = 3;
+  bytes value = 4;
+}
+
+message PutReply {
+
+}
+
+message GetRequest {
+  bytes key = 5;
+}
+
+message GetReply {
+  bytes value = 6;
+}
