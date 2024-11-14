@@ -4,19 +4,38 @@
 use anyhow::Result;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
+use tokio::sync::Mutex;
+use tokio::time::Instant;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::rpc::coordinator::*;
 use crate::*;
+use crate::log;
 
 pub mod args;
 
+
+pub struct Worker {
+    pub id: WorkerId,
+    pub last_heartbeat: Instant,
+}
+pub struct CoordinatorData {
+    pub workers: HashMap<WorkerId, Worker>,
+    pub next_worker_id: WorkerId,
+}
+
 pub struct Coordinator {
     // TODO: add your own fields
+    data : Arc<Mutex<CoordinatorData>>,
 }
 
 impl Coordinator {
     pub fn new() -> Self {
-        Self {}
+        Self { data: Arc::new(Mutex::new(CoordinatorData {
+            workers: HashMap::new(),
+            next_worker_id: INITIAL_WORKER_ID,
+        })) }
     }
 }
 
@@ -54,6 +73,15 @@ impl coordinator_server::Coordinator for Coordinator {
         req: Request<HeartbeatRequest>,
     ) -> Result<Response<HeartbeatReply>, Status> {
         // TODO: Worker registration
+
+        let worker_id = req.into_inner().worker_id;
+        let mut data = self.data.lock().await;
+        if let Some(worker) = data.workers.get_mut(&worker_id) {
+            worker.last_heartbeat = Instant::now();
+            log::info!("Heartbeat from worker {}", worker_id);
+        } else {
+            return Err(Status::not_found("Worker not found"));
+        }
         Ok(Response::new(HeartbeatReply {}))
     }
 
@@ -62,7 +90,15 @@ impl coordinator_server::Coordinator for Coordinator {
         _req: Request<RegisterRequest>,
     ) -> Result<Response<RegisterReply>, Status> {
         // TODO: Worker registration
-        Ok(Response::new(RegisterReply { worker_id: 0 }))
+        let mut data = self.data.lock().await;
+        let worker_id = data.next_worker_id;
+        data.next_worker_id += 1;
+        data.workers.insert(worker_id, Worker {
+            id: worker_id,
+            last_heartbeat: Instant::now(),
+        });
+        log::info!("Registered worker {}", worker_id);
+        Ok(Response::new(RegisterReply { worker_id }))
     }
 
     async fn get_task(
@@ -105,7 +141,7 @@ impl coordinator_server::Coordinator for Coordinator {
 pub async fn start(_args: args::Args) -> Result<()> {
     let addr = COORDINATOR_ADDR.parse().unwrap();
 
-    let coordinator = Coordinator {};
+    let coordinator = Coordinator::new();
     let svc = coordinator_server::CoordinatorServer::new(coordinator);
     Server::builder().add_service(svc).serve(addr).await?;
 
