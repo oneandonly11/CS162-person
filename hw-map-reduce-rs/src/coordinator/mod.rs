@@ -2,6 +2,7 @@
 //!
 
 use anyhow::Result;
+use ::log::info;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 use tonic::Code;
@@ -172,7 +173,7 @@ impl coordinator_server::Coordinator for Coordinator {
         let job_id = req.get_ref().job_id;
         let job = data.jobs.get_mut(&job_id).ok_or(Status::new(Code::NotFound, "job id is invalid"))?;
         Ok(Response::new(PollJobReply { 
-            done: false ,
+            done: matches!(job.status, JobStatus::Finished),
             failed: false,
             errors: Vec::new(),
         }))
@@ -240,6 +241,12 @@ impl coordinator_server::Coordinator for Coordinator {
         let mut data = self.data.lock().await;
         let worker_id = req.get_ref().worker_id;
 
+        if let Some(worker) = data.workers.get_mut(&worker_id) {
+            if let WorkerStatus::Doing = worker.status {
+                return Ok(Response::new(task));
+            }
+        } 
+
         let job_queue = data.job_queue.clone();
         
         let job_id = match job_queue.iter().find(|job_id| {
@@ -256,6 +263,10 @@ impl coordinator_server::Coordinator for Coordinator {
         task.args = job.args.clone();
         task.n_reduce = job.n_reduce as u32;
         task.n_map = job.files.len() as u32;
+
+        if matches!(job.status, JobStatus::Waiting) {
+            job.status = JobStatus::Mapping;
+        }
 
         match job.status {
             JobStatus::Mapping => {
@@ -285,9 +296,6 @@ impl coordinator_server::Coordinator for Coordinator {
             }
             _ => return Ok(Response::new(task)),
         }
-        if matches!(job.status, JobStatus::Waiting) {
-            job.status = JobStatus::Mapping;
-        }
         let worker = data.workers.get_mut(&worker_id).unwrap();
         worker.task = WorkerTask {
             job_id: job_id,
@@ -295,6 +303,7 @@ impl coordinator_server::Coordinator for Coordinator {
             reduce: task.reduce,
         };
         worker.status = WorkerStatus::Doing;
+        log::info!("Assigning task {} to worker {}", worker.task.task_id, worker_id);
         Ok(Response::new(task))
     }
 
@@ -306,6 +315,9 @@ impl coordinator_server::Coordinator for Coordinator {
         let req = req.into_inner();
         let mut data = self.data.lock().await;
         let worker_id = req.worker_id;
+
+        let worker = data.workers.get_mut(&worker_id).unwrap();
+        worker.status = WorkerStatus::Idle;
         let job_id = req.job_id;
         let job = data.jobs.get_mut(&job_id).unwrap();
         if req.reduce {
